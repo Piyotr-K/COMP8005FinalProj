@@ -1,2 +1,3 @@
 # COMP8005FinalProj
-A Port-forwarder
+A Simple Port-forwarder
+Made by Quincy Lam and Piyotr Kao
