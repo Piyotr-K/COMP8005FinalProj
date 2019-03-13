@@ -1,0 +1,13 @@
+#include <stdio.h>
+#include <netdb.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <errno.h>
+#include <stdlib.h>
+#include <strings.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <pthread.h>
+
+int host_socket_create(char *fwd_host, int fwd_port);
