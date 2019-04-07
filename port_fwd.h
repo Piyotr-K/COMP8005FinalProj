@@ -11,5 +11,9 @@
 #include <pthread.h>
 #include <signal.h>
 
-int connect_socket_create(char *fwd_host, int fwd_port);
+int forward_socket_create(struct sockaddr_in fwd_addr);
 int listen_socket_create(int port_listen);
+struct sockaddr_in parseAddr(char *line);
+void listen_on_socket(struct sockaddr_in fwd_addr);
+void send_packet(int src_sd, int dst_sd);
+void intHandler(int dummy);

@@ -25,126 +25,10 @@
 
 #define MAX_PORT_NUMBER     65535
 #define SERVER_TCP_PORT		7000	// Default port
-#define BUFLEN			80  	// Buffer length
+#define BUFLEN			4096 	// Buffer length
 #define TRUE            1
 
 static volatile int keepRunning = 1;
-
-void intHandler(int dummy)
-{
-    keepRunning = 0;
-}
-
-// int connect_socket_create(char *fwd_host, int fwd_port)
-// {
-//     int sd;
-//     char *host;
-//     struct sockaddr_in server;
-//
-//     // Create a stream socket
-// 	if ((sd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
-// 	{
-// 		perror ("Can't create a socket");
-// 		exit(1);
-// 	}
-//
-// 	// Bind an address to the socket
-// 	bzero((char *)&server, sizeof(struct sockaddr_in));
-// 	server.sin_family = AF_INET;
-// 	server.sin_port = htons(fwd_port);
-// 	server.sin_addr.s_addr = htonl(INADDR_ANY); // Accept connections from any client
-//
-// 	if (bind(sd, (struct sockaddr *)&server, sizeof(server)) == -1)
-// 	{
-// 		perror("Can't bind name to socket");
-// 		exit(1);
-// 	}
-//
-//     return sd;
-// }
-
-//Sets up the socket to listen on, returns the file descripter
-int listen_socket_create(int port_listen)
-{
-    int sd;
-    struct sockaddr_in server;
-
-    // Create a stream socket
-	if ((sd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
-	{
-		perror("Can't create a socket");
-		exit(1);
-	}
-
-    if (setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int)) < 0)
-        perror("setsockopt(SO_REUSEADDR) failed");
-
-#ifdef SO_REUSEPORT
-    if (setsockopt(sd, SOL_SOCKET, SO_REUSEPORT, &(int){1}, sizeof(int)) < 0)
-        perror("setsockopt(SO_REUSEPORT) failed");
-#endif
-	// Bind an address to the socket
-	bzero((char *)&server, sizeof(struct sockaddr_in));
-	server.sin_family = AF_INET;
-	server.sin_port = htons(port_listen);
-	server.sin_addr.s_addr = htonl(INADDR_ANY); // Accept connections from any client
-
-	if (bind(sd, (struct sockaddr *)&server, sizeof(server)) == -1)
-	{
-        perror("Can't bind name to socket");
-        exit(1);
-	}
-
-    return sd;
-}
-
-//Sets up a listener on the socket
-int listen_on_socket(struct sockaddr_in fwd_addr)
-{
-    struct	sockaddr_in client;
-    int	forward_sd, listen_sd, new_sd, client_len;
-    int port = ntohs(fwd_addr.sin_port);
-
-    listen_sd = listen_socket_create(port);
-    // queue up to 40 connect requests
-    listen(listen_sd, 40);
-    while (keepRunning)
-    {
-        client_len= sizeof(client);
-        if ((new_sd = accept (listen_sd, (struct sockaddr *)&client, &client_len)) == -1)
-        {
-            fprintf(stderr, "Can't accept client\n");
-            exit(1);
-        }
-        fprintf(stdout, "Message from port %d\n", port);
-        fflush(stdout);
-    }
-    exit(0);
-}
-
-//Sets up the sockaddr to the destination
-struct sockaddr_in parseAddr(char *line)
-{
-    struct sockaddr_in fwd_addr;
-    struct hostent *hp;
-    char ip[BUFLEN];
-    char unused_char;
-    int port;
-
-    bzero((char *)&fwd_addr, sizeof(struct sockaddr_in));
-    sscanf(line, "%[^,] %c %d", ip, &unused_char, &port);
-    fwd_addr.sin_family = AF_INET;
-    fwd_addr.sin_port = htons(port);
-
-    if ((hp = gethostbyname(ip)) == NULL)
-    {
-        fprintf(stderr, "Unknown server address\n");
-    }
-    // inet_pton(AF_INET, ip, &(fwd_addr.sin_addr));
-    bcopy(hp->h_addr, (char *)&fwd_addr.sin_addr, hp->h_length);
-
-    return fwd_addr;
-}
 
 int main (int argc, char **argv)
 {
@@ -181,26 +65,10 @@ int main (int argc, char **argv)
         }
     }
 
-    // forward_sd = host_socket_create(host, port);
-
     if (childpid == 0)
     {
         //Child Process
         listen_on_socket(fwd_addr);
-
-        //
-    	// 	printf(" Remote Address:  %s\n", inet_ntoa(client.sin_addr));
-    	// 	bp = buf;
-    	// 	bytes_to_read = BUFLEN;
-    	// 	while ((n = recv (new_sd, bp, bytes_to_read, 0)) < BUFLEN)
-    	// 	{
-    	// 		bp += n;
-    	// 		bytes_to_read -= n;
-    	// 	}
-    	// 	printf ("sending:%s\n", buf);
-        //
-    	// 	send (new_sd, buf, BUFLEN, 0);
-    	// 	close (new_sd);
     }
     else
     {
@@ -215,4 +83,167 @@ int main (int argc, char **argv)
     }
 
 	exit(0);
+}
+
+void intHandler(int dummy)
+{
+    keepRunning = 0;
+}
+
+void send_packet(int src_sd, int dst_sd)
+{
+    char *bp, buf[BUFLEN];
+    int bytes_to_read;
+    int n = 0;
+    int pos, sent_data;
+
+    while(TRUE)
+    {
+        n = read(src_sd, buf, BUFLEN);
+        if(!n)
+        {
+            perror("Exiting");
+            break;
+        }
+
+        while(n > 0)
+        {
+            pos = 0;
+            while(pos < n)
+            {
+                sent_data = write(dst_sd, buf + pos, n - pos);
+
+                if(sent_data == -1)
+                {
+                    perror("Send Error");
+                    exit(1);
+                }
+
+                pos += sent_data;
+            }
+
+            n = read(src_sd, buf, BUFLEN);
+        }
+    }
+
+    shutdown(src_sd, SHUT_RD);
+    shutdown(dst_sd, SHUT_WR);
+    close(src_sd);
+    close(dst_sd);
+    exit(0);
+}
+
+int forward_socket_create(struct sockaddr_in fwd_addr)
+{
+    int sd;
+
+    // Create the socket
+	if ((sd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
+	{
+		perror("Cannot create socket");
+		exit(1);
+	}
+
+    if (connect (sd, (struct sockaddr *)&fwd_addr, sizeof(fwd_addr)) == -1)
+	{
+		fprintf(stderr, "Can't connect to server\n");
+		perror("connect");
+		exit(1);
+	}
+
+    fprintf(stderr, "Connect Function\n");
+
+    return sd;
+}
+
+//Sets up the socket to listen on, returns the file descripter
+int listen_socket_create(int port_listen)
+{
+    int sd;
+    struct sockaddr_in server;
+
+    // Create a stream socket
+	if ((sd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
+	{
+		perror("Can't create a socket");
+		exit(1);
+	}
+
+	// Bind an address to the socket
+	bzero((char *)&server, sizeof(struct sockaddr_in));
+	server.sin_family = AF_INET;
+	server.sin_port = htons(port_listen);
+	server.sin_addr.s_addr = htonl(INADDR_ANY); // Accept connections from any client
+
+	if (bind(sd, (struct sockaddr *)&server, sizeof(server)) == -1)
+	{
+        perror("Can't bind name to socket");
+        exit(1);
+	}
+
+    return sd;
+}
+
+//Sets up a listener on the socket
+void listen_on_socket(struct sockaddr_in fwd_addr)
+{
+    pid_t childpid;
+    struct	sockaddr_in client;
+    int	forward_sd, listen_sd, client_sd, client_len;
+    int port = ntohs(fwd_addr.sin_port);
+
+    listen_sd = listen_socket_create(port);
+    // queue up to 40 connect requests
+    listen(listen_sd, 40);
+    while (keepRunning)
+    {
+        forward_sd = forward_socket_create(fwd_addr);
+        client_len= sizeof(client);
+        if ((client_sd = accept(listen_sd, NULL, NULL)) == -1)
+        {
+            fprintf(stderr, "Can't accept client\n");
+            exit(1);
+        }
+
+        // Spawns 2 child processes for two-way traffic.
+        childpid = fork();
+
+        if (childpid == 0)
+        {
+            send_packet(forward_sd, client_sd);
+        }
+        else
+        {
+            childpid = fork();
+            if (childpid == 0)
+            {
+                send_packet(client_sd, forward_sd);
+            }
+        }
+    }
+    return;
+}
+
+//Sets up the sockaddr to the destination
+struct sockaddr_in parseAddr(char *line)
+{
+    struct sockaddr_in fwd_addr;
+    struct hostent *hp;
+    char ip[BUFLEN];
+    char unused_char;
+    int port;
+
+    bzero((char *)&fwd_addr, sizeof(struct sockaddr_in));
+    sscanf(line, "%[^,] %c %d", ip, &unused_char, &port);
+    fwd_addr.sin_family = AF_INET;
+    fwd_addr.sin_port = htons(port);
+
+    if ((hp = gethostbyname(ip)) == NULL)
+    {
+        fprintf(stderr, "Unknown server address\n");
+    }
+    // inet_pton(AF_INET, ip, &(fwd_addr.sin_addr));
+    bcopy(hp->h_addr, (char *)&fwd_addr.sin_addr, hp->h_length);
+
+    return fwd_addr;
 }
