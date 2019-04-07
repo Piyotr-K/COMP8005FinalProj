@@ -28,6 +28,13 @@
 #define BUFLEN			80  	// Buffer length
 #define TRUE            1
 
+static volatile int keepRunning = 1;
+
+void intHandler(int dummy)
+{
+    keepRunning = 0;
+}
+
 // int connect_socket_create(char *fwd_host, int fwd_port)
 // {
 //     int sd;
@@ -56,6 +63,7 @@
 //     return sd;
 // }
 
+//Sets up the socket to listen on, returns the file descripter
 int listen_socket_create(int port_listen)
 {
     int sd;
@@ -68,6 +76,13 @@ int listen_socket_create(int port_listen)
 		exit(1);
 	}
 
+    if (setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int)) < 0)
+        perror("setsockopt(SO_REUSEADDR) failed");
+
+#ifdef SO_REUSEPORT
+    if (setsockopt(sd, SOL_SOCKET, SO_REUSEPORT, &(int){1}, sizeof(int)) < 0)
+        perror("setsockopt(SO_REUSEPORT) failed");
+#endif
 	// Bind an address to the socket
 	bzero((char *)&server, sizeof(struct sockaddr_in));
 	server.sin_family = AF_INET;
@@ -83,14 +98,17 @@ int listen_socket_create(int port_listen)
     return sd;
 }
 
-int listen_on_socket(int port, struct sockaddr_in fwd_addr)
+//Sets up a listener on the socket
+int listen_on_socket(struct sockaddr_in fwd_addr)
 {
-    struct	sockaddr_in server, client;
+    struct	sockaddr_in client;
     int	forward_sd, listen_sd, new_sd, client_len;
+    int port = ntohs(fwd_addr.sin_port);
+
     listen_sd = listen_socket_create(port);
     // queue up to 40 connect requests
     listen(listen_sd, 40);
-    while (TRUE)
+    while (keepRunning)
     {
         client_len= sizeof(client);
         if ((new_sd = accept (listen_sd, (struct sockaddr *)&client, &client_len)) == -1)
@@ -101,34 +119,65 @@ int listen_on_socket(int port, struct sockaddr_in fwd_addr)
         fprintf(stdout, "Message from port %d\n", port);
         fflush(stdout);
     }
+    exit(0);
+}
+
+//Sets up the sockaddr to the destination
+struct sockaddr_in parseAddr(char *line)
+{
+    struct sockaddr_in fwd_addr;
+    struct hostent *hp;
+    char ip[BUFLEN];
+    char unused_char;
+    int port;
+
+    bzero((char *)&fwd_addr, sizeof(struct sockaddr_in));
+    sscanf(line, "%[^,] %c %d", ip, &unused_char, &port);
+    fwd_addr.sin_family = AF_INET;
+    fwd_addr.sin_port = htons(port);
+
+    if ((hp = gethostbyname(ip)) == NULL)
+    {
+        fprintf(stderr, "Unknown server address\n");
+    }
+    // inet_pton(AF_INET, ip, &(fwd_addr.sin_addr));
+    bcopy(hp->h_addr, (char *)&fwd_addr.sin_addr, hp->h_length);
+
+    return fwd_addr;
 }
 
 int main (int argc, char **argv)
 {
-    pid_t childpid;
+    signal(SIGINT, intHandler);
 
-	int	n, bytes_to_read;
-	int	forward_sd, listen_sd, new_sd, client_len, port;
+    pid_t childpid, childpid_array[MAX_PORT_NUMBER];
+    int number_of_children = 0;
 
-	struct	sockaddr_in server, client, fwd_addr[MAX_PORT_NUMBER];
+	int	n, bytes_to_read, i;
+	int	forward_sd, listen_sd, new_sd, client_len;
+
+	struct	sockaddr_in server, client, fwd_addr;
 	char *bp, buf[BUFLEN];
-    char *host;
     char line[BUFLEN];
-    char ip[BUFLEN];
-    char unused_char;
+    char *host;
 
     //Opens the file for reading
     FILE *fp = fopen("dest_ip_ports.txt", "r");
     while (fgets(line, sizeof(line), fp))
     {
-        sscanf(line, "%[^,] %c %d", ip, &unused_char, &port);
-        fwd_addr[port].sin_family = AF_INET;
-        fwd_addr[port].sin_port = htons(port);
-        inet_pton(AF_INET, ip, &(fwd_addr[port].sin_addr));
+        fwd_addr = parseAddr(&line);
+
+        //Set listeners on children
         childpid = fork();
         if (childpid == 0)
         {
             break;
+        }
+        else
+        {
+            //Add to children list for parent to terminate later
+            childpid_array[number_of_children] = childpid;
+            number_of_children++;
         }
     }
 
@@ -137,7 +186,7 @@ int main (int argc, char **argv)
     if (childpid == 0)
     {
         //Child Process
-        listen_on_socket(port, fwd_addr[port]);
+        listen_on_socket(fwd_addr);
 
         //
     	// 	printf(" Remote Address:  %s\n", inet_ntoa(client.sin_addr));
@@ -156,9 +205,14 @@ int main (int argc, char **argv)
     else
     {
         //Parent Process
-        while(1);
+        while(keepRunning);
     }
 
-	close(listen_sd);
-	return(0);
+    //Clear all children after parent is signalled to stop
+    for (i = 0; i < number_of_children; i++)
+    {
+        kill(childpid_array[i], SIGKILL);
+    }
+
+	exit(0);
 }

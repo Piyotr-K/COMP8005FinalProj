@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <pthread.h>
+#include <signal.h>
 
 int connect_socket_create(char *fwd_host, int fwd_port);
 int listen_socket_create(int port_listen);
