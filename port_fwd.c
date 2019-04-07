@@ -45,11 +45,16 @@ int main (int argc, char **argv)
     char line[BUFLEN];
     char *host;
 
+    int *srcPrtPT;
+    int srcPrt = 8000;
+
+    srcPrtPT = &srcPrt;
+
     //Opens the file for reading
     FILE *fp = fopen("dest_ip_ports.txt", "r");
     while (fgets(line, sizeof(line), fp))
     {
-        fwd_addr = parseAddr(&line);
+        fwd_addr = parseAddr(&line, srcPrtPT);
 
         //Set listeners on children
         childpid = fork();
@@ -68,11 +73,11 @@ int main (int argc, char **argv)
     if (childpid == 0)
     {
         //Child Process
-        listen_on_socket(fwd_addr);
+        listen_on_socket(fwd_addr, *srcPrtPT);
     }
     else
     {
-        //Parent Process
+        //Parent Process    int port = ntohs(fwd_addr.sin_port);
         while(keepRunning);
     }
 
@@ -137,6 +142,7 @@ int forward_socket_create(struct sockaddr_in fwd_addr)
 {
     int sd;
 
+
     // Create the socket
 	if ((sd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
 	{
@@ -146,6 +152,7 @@ int forward_socket_create(struct sockaddr_in fwd_addr)
 
     if (connect (sd, (struct sockaddr *)&fwd_addr, sizeof(fwd_addr)) == -1)
 	{
+        int port = ntohs(fwd_addr.sin_port);
 		fprintf(stderr, "Can't connect to server\n");
 		perror("connect");
 		exit(1);
@@ -169,6 +176,14 @@ int listen_socket_create(int port_listen)
 		exit(1);
 	}
 
+    if (setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int)) < 0)
+        perror("setsockopt(SO_REUSEADDR) failed");
+
+    #ifdef SO_REUSEPORT
+        if (setsockopt(sd, SOL_SOCKET, SO_REUSEPORT, &(int){1}, sizeof(int)) < 0)
+            perror("setsockopt(SO_REUSEPORT) failed");
+    #endif
+
 	// Bind an address to the socket
 	bzero((char *)&server, sizeof(struct sockaddr_in));
 	server.sin_family = AF_INET;
@@ -185,12 +200,11 @@ int listen_socket_create(int port_listen)
 }
 
 //Sets up a listener on the socket
-void listen_on_socket(struct sockaddr_in fwd_addr)
+void listen_on_socket(struct sockaddr_in fwd_addr, int port)
 {
     pid_t childpid;
     struct	sockaddr_in client;
     int	forward_sd, listen_sd, client_sd, client_len;
-    int port = ntohs(fwd_addr.sin_port);
 
     listen_sd = listen_socket_create(port);
     // queue up to 40 connect requests
@@ -225,18 +239,18 @@ void listen_on_socket(struct sockaddr_in fwd_addr)
 }
 
 //Sets up the sockaddr to the destination
-struct sockaddr_in parseAddr(char *line)
+struct sockaddr_in parseAddr(char *line, int *srcPrtPT)
 {
     struct sockaddr_in fwd_addr;
     struct hostent *hp;
     char ip[BUFLEN];
     char unused_char;
-    int port;
+    int dstPort;
 
     bzero((char *)&fwd_addr, sizeof(struct sockaddr_in));
-    sscanf(line, "%[^,] %c %d", ip, &unused_char, &port);
+    sscanf(line, "%[^,] %c %d %c %d", ip, &unused_char, srcPrtPT, &unused_char, &dstPort);
     fwd_addr.sin_family = AF_INET;
-    fwd_addr.sin_port = htons(port);
+    fwd_addr.sin_port = htons(dstPort);
 
     if ((hp = gethostbyname(ip)) == NULL)
     {
