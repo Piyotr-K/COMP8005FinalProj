@@ -10,4 +10,5 @@
 #include <arpa/inet.h>
 #include <pthread.h>
 
-int host_socket_create(char *fwd_host, int fwd_port);
+int connect_socket_create(char *fwd_host, int fwd_port);
+int listen_socket_create(char *fwd_clnt);

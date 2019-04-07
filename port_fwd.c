@@ -27,12 +27,37 @@
 #define BUFLEN			80  	// Buffer length
 #define TRUE            1
 
-int host_socket_create(char *fwd_host, int fwd_port)
+int connect_socket_create(char *fwd_host, int fwd_port)
 {
-    int sd, port;
+    int sd;
     char *host;
     struct sockaddr_in server;
 
+    // Create a stream socket
+	if ((sd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
+	{
+		perror ("Can't create a socket");
+		exit(1);
+	}
+
+	// Bind an address to the socket
+	bzero((char *)&server, sizeof(struct sockaddr_in));
+	server.sin_family = AF_INET;
+	server.sin_port = htons(fwd_port);
+	server.sin_addr.s_addr = htonl(INADDR_ANY); // Accept connections from any client
+
+	if (bind(sd, (struct sockaddr *)&server, sizeof(server)) == -1)
+	{
+		perror("Can't bind name to socket");
+		exit(1);
+	}
+
+    return sd;
+}
+
+int listen_socket_create(char *fwd_clnt)
+{
+    int sd, port;
     // Create a stream socket
 	if ((sd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
 	{
