@@ -55,20 +55,22 @@ int connect_socket_create(char *fwd_host, int fwd_port)
     return sd;
 }
 
-int listen_socket_create(char *fwd_clnt)
+int listen_socket_create(int port_listen)
 {
-    int sd, port;
+    int sd;
+    struct sockaddr_in server;
+
     // Create a stream socket
 	if ((sd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
 	{
-		perror ("Can't create a socket");
+		perror("Can't create a socket");
 		exit(1);
 	}
 
 	// Bind an address to the socket
 	bzero((char *)&server, sizeof(struct sockaddr_in));
 	server.sin_family = AF_INET;
-	server.sin_port = htons(port);
+	server.sin_port = htons(port_listen);
 	server.sin_addr.s_addr = htonl(INADDR_ANY); // Accept connections from any client
 
 	if (bind(sd, (struct sockaddr *)&server, sizeof(server)) == -1)
@@ -83,7 +85,7 @@ int listen_socket_create(char *fwd_clnt)
 int main (int argc, char **argv)
 {
 	int	n, bytes_to_read;
-	int	sd, new_sd, client_len, port;
+	int	forward_sd, listen_sd, new_sd, client_len, port;
 	struct	sockaddr_in server, client;
 	char	*bp, buf[BUFLEN];
     char *host;
@@ -101,11 +103,11 @@ int main (int argc, char **argv)
 			exit(1);
 	}
 
-	// Listen for connections
-    sd = host_socket_create(host, port);
+    forward_sd = host_socket_create(host, port);
+    listen_sd = listen_socket_create(port);
 
-	// queue up to 5 connect requests
-	listen(sd, 5);
+	// queue up to 40 connect requests
+	listen(listen_sd, 40);
 
 	while (TRUE)
 	{
