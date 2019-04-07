@@ -11,4 +11,4 @@ port_forwarder: port_forwarder.c
 	${CC} -Wall -o ${FILENAME} port_fwd.c
 
 clean:
-	rm prog
+	rm FinalProg
