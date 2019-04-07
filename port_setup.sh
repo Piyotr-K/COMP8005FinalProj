@@ -5,7 +5,7 @@ ip_ports="dest_ip_ports.txt"
 
 function stopService()
 {
-	kill $(lsof -t -i:{port_num}) > /dev/null 2>&1
+	kill $(lsof -t -i:${port_num})> /dev/null 2>&1
 }
 
 function parsePorts()

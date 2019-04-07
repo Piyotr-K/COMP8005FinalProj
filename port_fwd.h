@@ -11,4 +11,4 @@
 #include <pthread.h>
 
 int connect_socket_create(char *fwd_host, int fwd_port);
-int listen_socket_create(char *fwd_clnt);
+int listen_socket_create(int port_listen);

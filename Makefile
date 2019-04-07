@@ -1,11 +1,14 @@
 CC = gcc
-FILENAME = prog
+FILENAME = FinalProg
 
 all:
 	${CC} -Wall -o ${FILENAME} port_fwd.c
-	
+
+debug:
+	${CC} -ggdb -Wall -o ${FILENAME} port_fwd.c
+
 port_forwarder: port_forwarder.c
-	${GCC} -Wall -o ${FILENAME} port_fwd.c
-	
+	${CC} -Wall -o ${FILENAME} port_fwd.c
+
 clean:
 	rm prog
